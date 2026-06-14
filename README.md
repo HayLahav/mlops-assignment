@@ -5,8 +5,8 @@
 ## Legend
 
 Imagine you're responsible for the LLM part of an internal analytics product (aka talk-to-your-data-for-those-with-sensitive-data). You need to show a text-to-SQL PoC for a trivial workflow:
-1. analysts ask questions in English
-2. the system runs SQL against an internal warehouse and returns rows. 
+1. Analysts ask questions in English
+2. The system runs SQL against an internal warehouse and returns rows. 
 
 You're to present it to technical leadership and they'll buy it if they see the whole system running with [Qwen3-30B-A3B](https://huggingface.co/collections/Qwen/qwen3) against [BIRD-bench](https://bird-bench.github.io/) showing some decent quality and performance.
 
