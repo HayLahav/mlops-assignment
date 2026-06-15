@@ -1,0 +1,162 @@
+{
+  "summary": {
+    "total": 10,
+    "pass_rate_final": 0.1,
+    "per_iter_pass_rate": {
+      "iter_0": 0.1,
+      "iter_1": 0.1,
+      "iter_2": 0.1
+    },
+    "avg_iterations": 1.6,
+    "agent_errors": 0
+  },
+  "wall_clock_seconds": 18.430048352000085,
+  "results": [
+    {
+      "question": "What is the coordinates location of the circuits for Australian grand prix?",
+      "db_id": "formula_1",
+      "gold_sql": "SELECT DISTINCT T1.lat, T1.lng FROM circuits AS T1 INNER JOIN races AS T2 ON T2.circuitID = T1.circuitId WHERE T2.name = 'Australian Grand Prix'",
+      "agent_sql": "SELECT c.lat, c.lng\nFROM circuits c\nJOIN races r ON c.circuitId = r.circuitId\nWHERE r.name = 'Australian Grand Prix';",
+      "iterations": 1,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false
+      ],
+      "latency_seconds": 2.7255275640000036
+    },
+    {
+      "question": "List down Ajax's superpowers.",
+      "db_id": "superhero",
+      "gold_sql": "SELECT T3.power_name FROM superhero AS T1 INNER JOIN hero_power AS T2 ON T1.id = T2.hero_id INNER JOIN superpower AS T3 ON T2.power_id = T3.id WHERE T1.superhero_name = 'Ajax'",
+      "agent_sql": "SELECT sp.power_name\nFROM superhero s\nJOIN hero_power hp ON s.id = hp.hero_id\nJOIN superpower sp ON hp.power_id = sp.id\nWHERE s.superhero_name = 'Ajax';",
+      "iterations": 1,
+      "ok": true,
+      "error": null,
+      "correct_final": true,
+      "per_iter_correct": [
+        true
+      ],
+      "latency_seconds": 0.8423478969998541
+    },
+    {
+      "question": "List the top five schools, by descending order, from the highest to the lowest, the most number of Enrollment (Ages 5-17). Please give their NCES school identification number.",
+      "db_id": "california_schools",
+      "gold_sql": "SELECT T1.NCESSchool FROM schools AS T1 INNER JOIN frpm AS T2 ON T1.CDSCode = T2.CDSCode ORDER BY T2.`Enrollment (Ages 5-17)` DESC LIMIT 5",
+      "agent_sql": "SELECT s.\"NCESDist\"\nFROM \"schools\" s\nJOIN \"frpm\" f ON s.\"CDSCode\" = f.\"CDSCode\"\nORDER BY f.\"Enrollment (Ages 5-17)\" DESC\nLIMIT 5;",
+      "iterations": 1,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false
+      ],
+      "latency_seconds": 0.8641951059998974
+    },
+    {
+      "question": "What is the average number of crimes committed in 1995 in regions where the number exceeds 4000 and the region has accounts that are opened starting from the year 1997?",
+      "db_id": "financial",
+      "gold_sql": "SELECT AVG(T1.A15) FROM district AS T1 INNER JOIN account AS T2 ON T1.district_id = T2.district_id WHERE STRFTIME('%Y', T2.date) >= '1997' AND T1.A15 > 4000",
+      "agent_sql": "SELECT AVG(d.A14) AS average_crimes\nFROM district d\nWHERE d.A14 > 4000\n  AND EXISTS (\n    SELECT 1\n    FROM account a\n    WHERE a.district_id = d.district_id\n      AND strftime('%Y', a.date) >= '1997'\n  )\n  AND d.A14 IS NOT NULL\n  AND d.A14 > 0;",
+      "iterations": 3,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false,
+        false,
+        false
+      ],
+      "latency_seconds": 3.3599867690008978
+    },
+    {
+      "question": "How many male clients in 'Hl.m. Praha' district?",
+      "db_id": "financial",
+      "gold_sql": "SELECT COUNT(T1.client_id) FROM client AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id WHERE T1.gender = 'M' AND T2.A2 = 'Hl.m. Praha'",
+      "agent_sql": "SELECT COUNT(*) \nFROM client c\nJOIN district d ON c.district_id = d.district_id\nWHERE c.gender = 'm' AND d.A2 = 'Hl.m. Praha';",
+      "iterations": 1,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false
+      ],
+      "latency_seconds": 0.6282298899986927
+    },
+    {
+      "question": "What is the average fastest lap time in seconds for Lewis Hamilton in all the Formula_1 races?",
+      "db_id": "formula_1",
+      "gold_sql": "SELECT AVG(CAST(SUBSTR(T2.fastestLapTime, 1, INSTR(T2.fastestLapTime, ':') - 1) AS INTEGER) * 60 + CAST(SUBSTR(T2.fastestLapTime, INSTR(T2.fastestLapTime, ':') + 1) AS REAL)) FROM drivers AS T1 INNER JOIN results AS T2 ON T1.driverId = T2.driverId WHERE T1.surname = 'Hamilton' AND T1.forename = 'Lewis'",
+      "agent_sql": "SELECT AVG(CAST(REPLACE(REPLACE(r.fastestLapTime, 'm', ':'), 's', '') AS REAL)) AS average_fastest_lap_time_seconds\nFROM results r\nJOIN drivers d ON r.driverId = d.driverId\nWHERE d.forename = 'Lewis' AND d.surname = 'Hamilton'\n  AND r.fastestLapTime IS NOT NULL\n  AND r.fastestLapTime != '0';",
+      "iterations": 3,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false,
+        false,
+        false
+      ],
+      "latency_seconds": 3.7267680450004264
+    },
+    {
+      "question": "From race no. 50 to 100, how many finishers have been disqualified?",
+      "db_id": "formula_1",
+      "gold_sql": "SELECT SUM(IIF(time IS NOT NULL, 1, 0)) FROM results WHERE statusId = 2 AND raceID < 100 AND raceId > 50",
+      "agent_sql": "SELECT COUNT(*) \nFROM results \nWHERE raceId BETWEEN 50 AND 100 \n  AND statusId = (\n    SELECT statusId \n    FROM status \n    WHERE status = 'Disqualified'\n  );",
+      "iterations": 1,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false
+      ],
+      "latency_seconds": 0.7063057260002097
+    },
+    {
+      "question": "Calculate the difference of the total amount spent in all events by the Student_Club in year 2019 and 2020.",
+      "db_id": "student_club",
+      "gold_sql": "SELECT SUM(CASE WHEN SUBSTR(T1.event_date, 1, 4) = '2019' THEN T2.spent ELSE 0 END) - SUM(CASE WHEN SUBSTR(T1.event_date, 1, 4) = '2020' THEN T2.spent ELSE 0 END) AS num FROM event AS T1 INNER JOIN budget AS T2 ON T1.event_id = T2.link_to_event",
+      "agent_sql": "SELECT \n  (SELECT SUM(b.spent) FROM budget b JOIN event e ON b.link_to_event = e.event_id WHERE strftime('%Y', e.event_date) = '2020') -\n  (SELECT SUM(b.spent) FROM budget b JOIN event e ON b.link_to_event = e.event_id WHERE strftime('%Y', e.event_date) = '2019') AS difference",
+      "iterations": 1,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false
+      ],
+      "latency_seconds": 1.0114565570002014
+    },
+    {
+      "question": "What is the complete address of the school with the lowest excellence rate? Indicate the Street, City, Zip and State.",
+      "db_id": "california_schools",
+      "gold_sql": "SELECT T2.Street, T2.City, T2.State, T2.Zip FROM satscores AS T1 INNER JOIN schools AS T2 ON T1.cds = T2.CDSCode ORDER BY CAST(T1.NumGE1500 AS REAL) / T1.NumTstTakr ASC LIMIT 1",
+      "agent_sql": "SELECT s.\"Street\", s.\"City\", s.\"Zip\", s.\"State\"\nFROM \"schools\" s\nJOIN \"satscores\" ss ON s.\"CDSCode\" = ss.\"cds\"\nORDER BY (ss.\"NumGE1500\" * 1.0 / ss.\"NumTstTakr\") ASC\nLIMIT 1;",
+      "iterations": 1,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false
+      ],
+      "latency_seconds": 0.9839517439995689
+    },
+    {
+      "question": "Calculate the percentage of carcinogenic molecules which contain the Chlorine element.",
+      "db_id": "toxicology",
+      "gold_sql": "SELECT COUNT(CASE WHEN T2.label = '+' AND T1.element = 'cl' THEN T2.molecule_id ELSE NULL END) * 100 / COUNT(T2.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id",
+      "agent_sql": "SELECT \n    CAST(SUM(CASE WHEN a.element = 'Cl' THEN 1 ELSE 0 END) AS FLOAT) * 100.0 / \n    COUNT(*) AS percentage\nFROM molecule m\nJOIN atom a ON m.molecule_id = a.molecule_id\nWHERE m.label = 'carcinogenic'\n  AND a.element = 'Cl';",
+      "iterations": 3,
+      "ok": true,
+      "error": null,
+      "correct_final": false,
+      "per_iter_correct": [
+        false,
+        false,
+        false
+      ],
+      "latency_seconds": 3.105773250999846
+    }
+  ]
+}

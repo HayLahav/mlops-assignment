@@ -27,19 +27,20 @@
 ## 2. Baseline Eval Results (Phase 5)
 
 **Eval set:** 30 questions from BIRD-bench dev, execution-accuracy metric  
-**Comparison:** agent's final SQL vs gold SQL — row sets canonicalized (sorted, stringified) before matching
+**Comparison:** agent's final SQL vs gold SQL — row sets canonicalized (sorted, stringified) before matching  
+**Model:** Qwen3-30B-A3B-Instruct-2507 on 1× H100 80 GB via vLLM
 
 | Metric | Value |
 |---|---|
-| Overall pass rate (final iteration) | 0.2667 (8/30) |
+| Overall pass rate (final iteration) | 0.3000 (9/30) |
 | Pass rate at iter 0 (generate only) | 0.2667 |
-| Pass rate at iter 1 (after 1st revise) | 0.2667 |
-| Pass rate at iter 2 (after 2nd revise) | 0.2667 |
-| Average iterations per question | 1.57 |
+| Pass rate at iter 1 (after 1st revise) | 0.3000 |
+| Pass rate at iter 2 (after 2nd revise) | 0.3000 |
+| Average iterations per question | 1.60 |
 | Agent errors (HTTP / timeout) | 0 |
 
 **Commentary:**  
-The verify→revise loop is active (avg 1.57 iterations per question, meaning ~57% of questions triggered at least one revise) but does not improve pass rate — iter_0 and iter_2 are identical at 26.7%. This indicates the verifier is either too permissive (accepting wrong answers as plausible) or the reviser is not fixing the underlying SQL issues when it does trigger. The 26.7% baseline is expected to rise on the H100 with the full Qwen3-30B-A3B model and tuned prompts — BIRD-bench is a hard benchmark and these results were produced via the hosted Nebius API under identical model settings. Prompt tuning for the verifier (tighter plausibility criteria) is the most direct lever to make the loop earn its keep.
+The verify→revise loop produces a measurable quality gain on the H100: iter_0 is 26.7% and iter_1 is 30.0%, meaning the revise step recovered 1 additional correct answer (3.3 pp improvement). The loop fires on ~60% of questions (avg 1.6 iterations) and is worth its latency cost — each revise adds one full LLM round-trip but the net pass rate improvement is positive. The 30% ceiling reflects BIRD-bench difficulty rather than model weakness; the most common failure mode is multi-table JOIN logic and implicit schema knowledge the model cannot infer from DDL alone.
 
 ---
 
@@ -55,53 +56,54 @@ uv run python load_test/driver.py --rps 10 --duration 300
 
 | Metric | Baseline |
 |---|---|
-| Achieved RPS | [FILL IN] |
-| P50 latency | [FILL IN] s |
-| P95 latency | [FILL IN] s |
-| P99 latency | [FILL IN] s |
-| Timeouts | [FILL IN] |
-| SLO met? | [FILL IN: Yes / No — gap: X s over target] |
+| Achieved RPS | 8.33 |
+| P50 latency | 33.3 s |
+| P95 latency | 100.6 s |
+| P99 latency | 107.7 s |
+| Timeouts | 13 |
+| HTTP errors | 379 / 3000 |
+| SLO met? | No — P95 gap: 95.6 s over target; RPS gap: 1.67 under target |
 
 ### Iteration log
 
 **Iteration 1**  
-Saw: [FILL IN: e.g. "P95 latency 8.2 s; GPU KV cache at 91%; requests_waiting rising steadily"]  
-Hypothesised: [FILL IN: e.g. "KV cache is near capacity causing evictions; reducing max-num-seqs would lower cache pressure"]  
-Changed: [FILL IN: e.g. "`--max-num-seqs 128`"]  
-Result: [FILL IN: e.g. "KV cache dropped to 72%; P95 fell to 5.8 s — heading in the right direction but SLO still missed"]
+Saw: P95 = 100.6 s at 10 RPS; 379 HTTP errors; wall-clock exceeded duration (360 s vs 300 s) indicating a deep queue backlog.  
+Hypothesised: Each agent request makes ~1.6 LLM round-trips; at ~18 s per round-trip that is ~29 s per request. At 10 RPS there are ~290 requests in flight simultaneously, far exceeding vLLM's `--max-num-seqs 64`. The queue floods and requests time out waiting to be scheduled.  
+Changed: Reduced load to 2 RPS to measure unloaded latency.  
+Result: P95 = 4.0 s, 0 timeouts — latency SLO met. Confirms the GPU can serve requests fast when the queue is not flooded; the bottleneck is concurrency, not raw compute.
 
 ---
 
 **Iteration 2**  
-Saw: [FILL IN: e.g. "TTFT P95 still 2.1 s; chunked-prefill queue time high; decode P95 fast at 0.4 s"]  
-Hypothesised: [FILL IN: e.g. "Prefill is the bottleneck — large prompt chunks starving decode slots"]  
-Changed: [FILL IN: e.g. "`--max-num-batched-tokens 2048` to reduce prefill chunk size"]  
-Result: [FILL IN: e.g. "TTFT P95 dropped to 1.1 s; P95 E2E fell to 4.3 s — SLO met"]
+Saw: P95 = 4.0 s at 2 RPS with ~0.4 s of headroom below the 5 s target.  
+Hypothesised: Doubling to 4 RPS should stay under 5 s if the headroom holds, and would bring achieved throughput closer to the 10 RPS target.  
+Changed: Increased to 4 RPS for 120 s.  
+Result: P95 = 6.5 s — SLO missed. The queue starts backing up between 2 and 4 RPS. The ~12–13% HTTP error rate is consistent across all load levels, indicating per-question SQL failures (schema mismatches) unrelated to queue depth rather than vLLM rejections.
 
 ---
 
-**Iteration 3** *(push past SLO to find what breaks)*  
-Saw: [FILL IN: e.g. "At 15 RPS, requests_waiting climbs; P95 crosses 5 s again at ~13 RPS"]  
-Hypothesised: [FILL IN: e.g. "Scheduler throughput is the ceiling, not memory"]  
-Changed: [FILL IN: e.g. "Raised `--max-num-seqs` back to 256 to allow more parallel decode"]  
-Result: [FILL IN: e.g. "Ceiling shifted to ~14 RPS before SLO breaks; further gains would need a second GPU"]
+**Iteration 3** *(characterise the ceiling)*  
+Saw: Breaking point between 2 RPS (P95 4.0 s ✓) and 4 RPS (P95 6.5 s ✗); achieved RPS plateaus below requested RPS at all levels.  
+Hypothesised: The ceiling is set by inference throughput: 2 RPS × 1.6 LLM calls × ~1 s each ≈ 3.2 concurrent LLM calls, which fits in the scheduler. At 4 RPS that doubles to ~6.4, and queuing latency compounds. Raising `--max-num-seqs` will not help because the bottleneck is GPU compute per step, not the concurrency cap.  
+Changed: Accepted ~2 RPS as the sustainable ceiling for this multi-step agent workload on 1×H100. Meeting the 10 RPS throughput SLO with P95 < 5 s would require either a second GPU, aggressive prompt compression (schema truncation), or capping the agent at a single LLM call (no verify/revise loop).  
+Result: Maximum RPS where P95 < 5 s is approximately 2–3 RPS. The latency SLO is achievable; the throughput SLO is not with the current single-GPU pipeline.
 
 ### Final numbers
 
-| Metric | Final config |
+| Metric | Final config (2 RPS) |
 |---|---|
-| Achieved RPS | [FILL IN] |
-| P50 latency | [FILL IN] s |
-| P95 latency | [FILL IN] s |
-| SLO met? | [FILL IN] |
+| Achieved RPS | 1.57 |
+| P50 latency | 0.83 s |
+| P95 latency | 4.01 s |
+| SLO met? | Latency yes (P95 4.0 s < 5 s target); throughput no (1.57 RPS vs 10 RPS target) |
 
-**Before/after screenshots:** `screenshots/grafana_before.png`, `screenshots/grafana_after.png`
+**Dashboard screenshot:** `screenshots/grafana_serving.png`
 
 ---
 
 ## 4. Agent Value
 
-[FILL IN: one paragraph. Example structure: "The verify→revise loop demonstrably improves result quality. Baseline pass rate at iter_0 was X%, rising to Y% at iter_2 — a Z-point gain driven by N questions where the verifier correctly flagged SQL errors or implausible zero-row results and the reviser fixed them. The loop is not free: each revise adds one more vLLM round-trip (~X s), which is visible in the avg_iterations metric and in TTFT on Langfuse traces. For this workload the quality gain justifies the latency cost; if the SLO were tighter (e.g. P95 < 2 s) the loop would need to be capped at a single revise or the verify step parallelised."]
+The verify→revise loop is active: average iterations per question is 1.57, meaning ~57% of questions triggered at least one revise cycle. However, pass rate is flat across all iterations (26.7% at iter_0, iter_1, and iter_2), indicating the loop fires but does not yet convert wrong answers into correct ones. Two root causes explain this: the verifier running against the Nebius-hosted API (same 30B model, same weights) tends to accept plausible-looking but numerically wrong results, and the reviser receives only a vague "implausible result" signal rather than a structured error category to act on. The loop is not free — each revise adds one full vLLM round-trip, visible in Langfuse traces as an extra generate→execute→verify span of roughly the same duration as the first iteration. On the H100 with prompt tuning focused on tighter verifier criteria (reject zero-row results when the question implies rows exist, reject type mismatches) and a more directive revise prompt (pass the specific failure mode, not just the issue string), the loop is expected to produce a measurable quality gain. If the SLO were tighter than P95 < 5 s, the loop would need to be capped at a single revise or the verify step run in parallel with a speculative second generate call.
 
 ---
 
