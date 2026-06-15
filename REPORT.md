@@ -11,16 +11,14 @@
 | Flag | Value | Justification |
 |---|---|---|
 | `--dtype` | `bfloat16` | H100 has native BF16 tensor cores; no precision loss vs float32. |
-| `--quantization` | `fp8` | Qwen3-30B in BF16 is ~60 GB — almost no KV cache headroom. FP8 halves weights to ~30 GB. H100 has native FP8 execution, so throughput is not sacrificed. |
-| `--kv-cache-dtype` | `fp8` | Halves KV cache memory per token; more concurrent sequences fit before eviction triggers. |
 | `--gpu-memory-utilization` | `0.92` | Uses 92% of 80 GB HBM, leaving ~6 GB for CUDA allocator and activation buffers. |
 | `--max-model-len` | `8192` | Model supports 32K+ but prompts cap at ~3K tokens. Capping here shrinks the KV block pool and frees memory for larger batches. |
-| `--max-num-seqs` | `256` | Qwen3-30B-A3B activates only ~3B parameters per forward pass (MoE), so compute per token is cheap — the GPU can sustain large batches. |
-| `--max-num-batched-tokens` | `4096` | Per-step budget covering one full prefill plus a decode batch; keeps scheduler step duration predictable. |
+| `--max-num-seqs` | `64` | Caps the scheduler's concurrency window. Qwen3-30B-A3B is a MoE model (~3B active params per forward pass), so per-token compute is cheap, but KV cache pressure grows with concurrency — 64 kept cache utilisation healthy without evictions. |
 | `--enable-chunked-prefill` | — | Prevents a 3K-token prefill from blocking all in-flight decode requests for one full step. Interleaving cuts TTFT variance. |
 | `--enable-prefix-caching` | — | Every request embeds the DB schema. Many requests share the same DB, so the schema prefix is identical. Cache hits eliminate redundant prefill compute and cut TTFT. |
-| `--trust-remote-code` | — | Required for Qwen3's custom modelling code. |
 | `--disable-log-requests` | — | Suppresses per-request access logs; avoids log-lock contention at high RPS. |
+
+**Note on fp8 quantization:** FP8 weight quantization (`--quantization fp8`) was the initial plan to free ~30 GB of HBM for a larger KV cache. In practice the vLLM 0.10.2 + Qwen3 combination silently fell back to BF16 (model loaded at 56.9 GiB). The 80 GB H100 had sufficient headroom in BF16 with `--max-model-len 8192`, so fp8 was not pursued further.
 
 ---
 
